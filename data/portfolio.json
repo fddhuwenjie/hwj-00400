@@ -1,0 +1,14 @@
+{
+  "cash": 961559.4834,
+  "positions": [
+    {
+      "code": "000858",
+      "name": "五粮液",
+      "quantity": 200,
+      "avgCost": 161.5,
+      "frozenQuantity": 0
+    }
+  ],
+  "orderIdCounter": 3,
+  "savedAt": 1780759477628
+}

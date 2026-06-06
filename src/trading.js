@@ -1,6 +1,7 @@
 const market = require('./market');
 const { getStockByCode } = require('./stocks');
 const { colorPrice, colorChange, formatVolume, COLORS } = require('./display');
+const storage = require('./storage');
 
 class TradingSystem {
   constructor() {
@@ -9,6 +10,50 @@ class TradingSystem {
     this.orders = [];
     this.orderIdCounter = 0;
     this.tradeHistory = [];
+    this.autoSave = true;
+    
+    this.load();
+  }
+
+  load() {
+    const portfolioData = storage.loadPortfolio();
+    if (portfolioData) {
+      this.cash = portfolioData.cash;
+      this.portfolio = portfolioData.portfolio;
+      this.orderIdCounter = portfolioData.orderIdCounter;
+      const savedDate = new Date(portfolioData.savedAt).toLocaleString('zh-CN');
+      console.log(`${COLORS.cyan}💾 已加载持仓数据（保存于: ${savedDate}）${COLORS.reset}`);
+    }
+    
+    const historyData = storage.loadTradeHistory();
+    if (historyData && historyData.length > 0) {
+      this.tradeHistory = historyData;
+      console.log(`${COLORS.cyan}💾 已加载 ${historyData.length} 条交易记录${COLORS.reset}`);
+    }
+    
+    const ordersData = storage.loadOrders();
+    if (ordersData && ordersData.length > 0) {
+      this.orders = ordersData;
+      console.log(`${COLORS.cyan}💾 已加载 ${ordersData.length} 个委托单${COLORS.reset}`);
+    }
+  }
+
+  save() {
+    if (!this.autoSave) return;
+    
+    storage.savePortfolio(this.cash, this.portfolio, this.orderIdCounter);
+    storage.saveTradeHistory(this.tradeHistory);
+    storage.saveOrders(this.orders);
+  }
+
+  reset() {
+    this.cash = 1000000;
+    this.portfolio = new Map();
+    this.orders = [];
+    this.orderIdCounter = 0;
+    this.tradeHistory = [];
+    storage.clearAll();
+    console.log(`${COLORS.yellow}🔄 账户已重置，初始资金 1,000,000 元${COLORS.reset}`);
   }
 
   buy(code, quantity, type = 'market', price = null) {
@@ -49,6 +94,7 @@ class TradingSystem {
 
     if (type === 'market') {
       this._executeBuy(order);
+      this.save();
       return {
         success: true,
         message: `买入 ${stock.name} ${quantity}股，成交价 ${orderPrice.toFixed(2)}，总金额 ${totalAmount.toFixed(2)}`
@@ -59,6 +105,7 @@ class TradingSystem {
       }
       this.cash -= totalAmount;
       this.orders.push(order);
+      this.save();
       return {
         success: true,
         message: `限价买单已提交，委托价 ${price.toFixed(2)}，等待成交...`
@@ -106,6 +153,7 @@ class TradingSystem {
       const commission = Math.max(revenue * 0.0003, 5);
       const stampDuty = revenue * 0.001;
       const netAmount = revenue - commission - stampDuty;
+      this.save();
       return {
         success: true,
         message: `卖出 ${stock.name} ${quantity}股，成交价 ${orderPrice.toFixed(2)}，净收入 ${netAmount.toFixed(2)}`
@@ -114,6 +162,7 @@ class TradingSystem {
       position.quantity -= quantity;
       position.frozenQuantity = (position.frozenQuantity || 0) + quantity;
       this.orders.push(order);
+      this.save();
       return {
         success: true,
         message: `限价卖单已提交，委托价 ${price.toFixed(2)}，等待成交...`
@@ -199,6 +248,7 @@ class TradingSystem {
 
   checkOrders() {
     const pendingOrders = this.orders.filter(o => o.status === 'pending');
+    let hasChanges = false;
     
     pendingOrders.forEach(order => {
       const stock = market.getStock(order.code);
@@ -212,18 +262,25 @@ class TradingSystem {
           
           if (this.cash >= totalAmount) {
             this._executeBuy(order);
+            hasChanges = true;
           } else {
             order.status = 'cancelled';
+            hasChanges = true;
           }
         }
       } else if (order.type === 'sell') {
           if (stock.currentPrice >= order.price) {
             this._executeSell(order);
+            hasChanges = true;
           }
         }
       });
     
     this.orders = this.orders.filter(o => o.status !== 'filled');
+    
+    if (hasChanges) {
+      this.save();
+    }
   }
 
   getPortfolio() {
@@ -300,6 +357,10 @@ class TradingSystem {
     console.log(`持仓市值: ${pf.totalValue.toFixed(2)}`);
     console.log(`持仓盈亏: ${colorChange(pf.totalProfit, pf.totalProfitPercent)}`);
     console.log(`总资产: ${COLORS.bold}${pf.totalAssets.toFixed(2)}${COLORS.reset}`);
+    
+    if (storage.hasSavedData()) {
+      console.log(`${COLORS.cyan}💾 数据已自动保存到 data/ 目录${COLORS.reset}`);
+    }
     console.log();
 
     const orders = this.getOrders();
@@ -327,5 +388,19 @@ setInterval(() => {
     trading.checkOrders();
   }
 }, 1000);
+
+process.on('SIGINT', () => {
+  trading.save();
+  console.log('\n💾 数据已保存');
+});
+
+process.on('SIGTERM', () => {
+  trading.save();
+  console.log('\n💾 数据已保存');
+});
+
+process.on('exit', () => {
+  trading.save();
+});
 
 module.exports = trading;

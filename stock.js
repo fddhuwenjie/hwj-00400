@@ -40,6 +40,7 @@ ${COLORS.cyan}命令列表:${COLORS.reset}
     sell <code> <quantity> [market|limit] [price]
                               卖出股票（默认市价单）
     portfolio                 查看持仓和委托单
+    reset                     重置账户（清空所有数据）
 
   ${COLORS.yellow}技术指标${COLORS.reset}
     indicators <code>         显示技术指标（MA/RSI/MACD/布林带）
@@ -65,11 +66,14 @@ ${COLORS.cyan}示例:${COLORS.reset}
   node stock.js top gain
   node stock.js buy 600519 100
   node stock.js sell 600519 100 limit 1800.00
-  node stock.js indicators 000858
+  node stock.js portfolio
   node stock.js history --limit 10 --export
+  node stock.js indicators 000858
   node stock.js strategy backtest ma_crossover
+  node stock.js reset
 
 ${COLORS.yellow}提示:${COLORS.reset} 启动后自动开始行情模拟，按 Ctrl+C 退出
+  ${COLORS.yellow}💾 数据自动保存:${COLORS.reset} 交易记录和持仓自动保存到 data/ 目录，重启后自动恢复
 `);
 }
 
@@ -131,6 +135,11 @@ async function executeCommand(cmd, positional, options) {
       
     case 'portfolio':
       trading.renderPortfolio();
+      process.exit(0);
+      break;
+      
+    case 'reset':
+      trading.reset();
       process.exit(0);
       break;
       
