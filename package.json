@@ -1,0 +1,15 @@
+{
+  "name": "stock-trading-simulator",
+  "version": "1.0.0",
+  "description": "Terminal stock market simulation and trading system",
+  "main": "stock.js",
+  "bin": {
+    "stock": "./stock.js"
+  },
+  "scripts": {
+    "start": "node stock.js watch"
+  },
+  "keywords": ["stock", "trading", "simulation", "terminal"],
+  "author": "",
+  "license": "MIT"
+}
