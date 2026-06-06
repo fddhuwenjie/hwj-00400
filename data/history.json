@@ -1,38 +1,27 @@
 {
   "trades": [
     {
-      "time": 1780759433638,
+      "time": 1780760346063,
       "type": "buy",
       "code": "600519",
       "name": "贵州茅台",
       "quantity": 100,
-      "price": 1677.86,
-      "amount": 167836.3358,
-      "commission": 50.3358,
+      "price": 1668.43,
+      "amount": 166893.0529,
+      "commission": 50.052899999999994,
       "profit": 0
     },
     {
-      "time": 1780759442014,
+      "time": 1780760359559,
       "type": "buy",
-      "code": "000858",
-      "name": "五粮液",
-      "quantity": 200,
-      "price": 161.5,
-      "amount": 32309.69,
-      "commission": 9.69,
+      "code": "000001",
+      "name": "平安银行",
+      "quantity": 1000,
+      "price": 12.21,
+      "amount": 12215,
+      "commission": 5,
       "profit": 0
-    },
-    {
-      "time": 1780759454066,
-      "type": "sell",
-      "code": "600519",
-      "name": "贵州茅台",
-      "quantity": 100,
-      "price": 1619.16,
-      "amount": 161705.5092,
-      "commission": 210.49079999999998,
-      "profit": -6080.49
     }
   ],
-  "savedAt": 1780759477628
+  "savedAt": 1780760422652
 }

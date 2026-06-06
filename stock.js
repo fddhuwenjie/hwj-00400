@@ -2,13 +2,17 @@
 
 const market = require('./src/market');
 const trading = require('./src/trading');
+const watchlist = require('./src/watchlist');
 const TradeHistory = require('./src/history');
 const StrategyEngine = require('./src/strategy');
+const ReportGenerator = require('./src/report');
 const klineGenerator = require('./src/kline');
 const indicators = require('./src/indicators');
 const chart = require('./src/chart');
 const { 
   renderWatchList, 
+  renderWatchListFavorites,
+  renderWatchlistStatic,
   renderQuote, 
   renderTop,
   colorPrice, 
@@ -30,17 +34,29 @@ ${'='.repeat(60)}
 ${COLORS.cyan}命令列表:${COLORS.reset}
 
   ${COLORS.yellow}行情展示${COLORS.reset}
-    watch                     实时监控股票列表（每秒刷新）
+    watch [--favorites]       实时监控股票列表（每秒刷新）
+                                --favorites 只监控自选股
     quote <code>              查看个股详情
     top [gain|loss|volume]    显示排行榜（涨幅/跌幅/成交量）
 
+  ${COLORS.yellow}自选股管理${COLORS.reset}
+    watchlist add <code>      添加股票到自选列表
+    watchlist remove <code>   从自选列表移除股票
+    watchlist list            显示自选股实时行情
+
   ${COLORS.yellow}模拟交易${COLORS.reset}
-    buy <code> <quantity> [market|limit] [price]
+    buy <code> <quantity> [market|limit] [price] [--tp price] [--sl price]
                               买入股票（默认市价单）
-    sell <code> <quantity> [market|limit] [price]
+                                --tp 止盈价  --sl 止损价
+    sell <code> <quantity> [market|limit] [price] [--tp price] [--sl price]
                               卖出股票（默认市价单）
-    portfolio                 查看持仓和委托单
+    portfolio                 查看持仓和委托单（含止盈止损状态）
+    alert                     查看止盈止损触发记录
     reset                     重置账户（清空所有数据）
+
+  ${COLORS.yellow}账户报表${COLORS.reset}
+    report [--export]         生成投资报表
+                                --export 导出为HTML格式
 
   ${COLORS.yellow}技术指标${COLORS.reset}
     indicators <code>         显示技术指标（MA/RSI/MACD/布林带）
@@ -62,11 +78,17 @@ ${COLORS.cyan}命令列表:${COLORS.reset}
 
 ${COLORS.cyan}示例:${COLORS.reset}
   node stock.js watch
+  node stock.js watch --favorites
+  node stock.js watchlist add 600519
+  node stock.js watchlist list
   node stock.js quote 600519
   node stock.js top gain
-  node stock.js buy 600519 100
+  node stock.js buy 600519 100 --tp 2000.00 --sl 1600.00
   node stock.js sell 600519 100 limit 1800.00
   node stock.js portfolio
+  node stock.js alert
+  node stock.js report
+  node stock.js report --export
   node stock.js history --limit 10 --export
   node stock.js indicators 000858
   node stock.js strategy backtest ma_crossover
@@ -107,7 +129,11 @@ async function executeCommand(cmd, positional, options) {
   
   switch (cmd) {
     case 'watch':
-      runWatchMode();
+      runWatchMode(options);
+      break;
+      
+    case 'watchlist':
+      handleWatchlist(positional);
       break;
       
     case 'quote':
@@ -130,7 +156,7 @@ async function executeCommand(cmd, positional, options) {
         console.log(`${COLORS.red}错误: 请指定股票代码和数量${COLORS.reset}`);
         process.exit(1);
       }
-      handleTrade(cmd, positional[0], parseInt(positional[1]), positional[2], parseFloat(positional[3]));
+      handleTrade(cmd, positional[0], parseInt(positional[1]), positional[2], parseFloat(positional[3]), options);
       break;
       
     case 'portfolio':
@@ -138,8 +164,24 @@ async function executeCommand(cmd, positional, options) {
       process.exit(0);
       break;
       
+    case 'alert':
+      trading.renderAlerts();
+      process.exit(0);
+      break;
+      
+    case 'report':
+      const reportGen = new ReportGenerator(trading, tradeHistory);
+      if (options.export) {
+        reportGen.exportHTML();
+      } else {
+        reportGen.renderReport();
+      }
+      process.exit(0);
+      break;
+      
     case 'reset':
       trading.reset();
+      watchlist.reset();
       process.exit(0);
       break;
       
@@ -173,12 +215,14 @@ async function executeCommand(cmd, positional, options) {
   }
 }
 
-function runWatchMode() {
-  renderWatchList();
+function runWatchMode(options = {}) {
+  const renderFn = options.favorites ? renderWatchListFavorites : renderWatchList;
+  
+  renderFn();
   klineGenerator.update();
   
   const intervalId = setInterval(() => {
-    renderWatchList();
+    renderFn();
     klineGenerator.update();
   }, 1000);
   
@@ -188,6 +232,49 @@ function runWatchMode() {
     console.log('\n👋 再见！');
     process.exit(0);
   });
+}
+
+function handleWatchlist(positional) {
+  const action = positional[0];
+  const code = positional[1];
+  
+  switch (action) {
+    case 'add':
+      if (!code) {
+        console.log(`${COLORS.red}错误: 请指定股票代码${COLORS.reset}`);
+        process.exit(1);
+      }
+      const addResult = watchlist.add(code);
+      if (addResult.success) {
+        console.log(`${COLORS.green}✅ ${addResult.message}${COLORS.reset}`);
+      } else {
+        console.log(`${COLORS.red}❌ ${addResult.message}${COLORS.reset}`);
+      }
+      break;
+      
+    case 'remove':
+      if (!code) {
+        console.log(`${COLORS.red}错误: 请指定股票代码${COLORS.reset}`);
+        process.exit(1);
+      }
+      const removeResult = watchlist.remove(code);
+      if (removeResult.success) {
+        console.log(`${COLORS.green}✅ ${removeResult.message}${COLORS.reset}`);
+      } else {
+        console.log(`${COLORS.red}❌ ${removeResult.message}${COLORS.reset}`);
+      }
+      break;
+      
+    case 'list':
+      renderWatchlistStatic();
+      break;
+      
+    default:
+      console.log(`${COLORS.red}未知操作: ${action}${COLORS.reset}`);
+      console.log('可用操作: add <code>, remove <code>, list');
+  }
+  
+  process.exit(0);
 }
 
 function runQuoteMode(code) {
@@ -212,7 +299,7 @@ function runTopMode(type, count) {
   process.exit(0);
 }
 
-function handleTrade(action, code, quantity, orderType, price) {
+function handleTrade(action, code, quantity, orderType, price, options = {}) {
   const stock = getStockByCode(code);
   if (!stock) {
     console.log(`${COLORS.red}错误: 股票代码不存在: ${code}${COLORS.reset}`);
@@ -235,15 +322,34 @@ function handleTrade(action, code, quantity, orderType, price) {
     process.exit(1);
   }
   
+  const takeProfit = options.tp ? parseFloat(options.tp) : null;
+  const stopLoss = options.sl ? parseFloat(options.sl) : null;
+  
+  if (takeProfit !== null && isNaN(takeProfit)) {
+    console.log(`${COLORS.red}错误: 止盈价无效${COLORS.reset}`);
+    process.exit(1);
+  }
+  
+  if (stopLoss !== null && isNaN(stopLoss)) {
+    console.log(`${COLORS.red}错误: 止损价无效${COLORS.reset}`);
+    process.exit(1);
+  }
+  
   let result;
   if (action === 'buy') {
-    result = trading.buy(code, quantity, type, price);
+    result = trading.buy(code, quantity, type, price, takeProfit, stopLoss);
   } else {
     result = trading.sell(code, quantity, type, price);
   }
   
   if (result.success) {
     console.log(`${COLORS.green}✅ ${result.message}${COLORS.reset}`);
+    if (takeProfit !== null || stopLoss !== null) {
+      let extra = [];
+      if (takeProfit !== null) extra.push(`止盈价: ${takeProfit.toFixed(2)}`);
+      if (stopLoss !== null) extra.push(`止损价: ${stopLoss.toFixed(2)}`);
+      console.log(`${COLORS.cyan}📌 ${extra.join(', ')}${COLORS.reset}`);
+    }
     trading.renderPortfolio();
   } else {
     console.log(`${COLORS.red}❌ ${result.message}${COLORS.reset}`);

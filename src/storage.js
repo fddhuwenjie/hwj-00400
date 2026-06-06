@@ -5,6 +5,9 @@ const DATA_DIR = path.join(process.cwd(), 'data');
 const PORTFOLIO_FILE = path.join(DATA_DIR, 'portfolio.json');
 const HISTORY_FILE = path.join(DATA_DIR, 'history.json');
 const ORDERS_FILE = path.join(DATA_DIR, 'orders.json');
+const WATCHLIST_FILE = path.join(DATA_DIR, 'watchlist.json');
+const ALERTS_FILE = path.join(DATA_DIR, 'alerts.json');
+const ASSET_HISTORY_FILE = path.join(DATA_DIR, 'asset_history.json');
 
 function ensureDataDir() {
   if (!fs.existsSync(DATA_DIR)) {
@@ -22,7 +25,9 @@ function savePortfolio(cash, portfolio, orderIdCounter) {
       name: pos.name,
       quantity: pos.quantity,
       avgCost: pos.avgCost,
-      frozenQuantity: pos.frozenQuantity || 0
+      frozenQuantity: pos.frozenQuantity || 0,
+      takeProfit: pos.takeProfit !== undefined ? pos.takeProfit : null,
+      stopLoss: pos.stopLoss !== undefined ? pos.stopLoss : null
     })),
     orderIdCounter,
     savedAt: Date.now()
@@ -47,7 +52,9 @@ function loadPortfolio() {
         name: pos.name,
         quantity: pos.quantity,
         avgCost: pos.avgCost,
-        frozenQuantity: pos.frozenQuantity || 0
+        frozenQuantity: pos.frozenQuantity || 0,
+        takeProfit: pos.takeProfit !== undefined ? pos.takeProfit : null,
+        stopLoss: pos.stopLoss !== undefined ? pos.stopLoss : null
       });
     });
     
@@ -131,12 +138,90 @@ function clearAll() {
   if (fs.existsSync(ORDERS_FILE)) {
     fs.unlinkSync(ORDERS_FILE);
   }
+  if (fs.existsSync(WATCHLIST_FILE)) {
+    fs.unlinkSync(WATCHLIST_FILE);
+  }
+  if (fs.existsSync(ALERTS_FILE)) {
+    fs.unlinkSync(ALERTS_FILE);
+  }
+  if (fs.existsSync(ASSET_HISTORY_FILE)) {
+    fs.unlinkSync(ASSET_HISTORY_FILE);
+  }
 }
 
 function hasSavedData() {
   return fs.existsSync(PORTFOLIO_FILE) || 
          fs.existsSync(HISTORY_FILE) || 
          fs.existsSync(ORDERS_FILE);
+}
+
+function saveWatchlist(watchlist) {
+  ensureDataDir();
+  const data = {
+    stocks: watchlist,
+    savedAt: Date.now()
+  };
+  fs.writeFileSync(WATCHLIST_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  return data;
+}
+
+function loadWatchlist() {
+  if (!fs.existsSync(WATCHLIST_FILE)) {
+    return [];
+  }
+  try {
+    const data = JSON.parse(fs.readFileSync(WATCHLIST_FILE, 'utf-8'));
+    return data.stocks || [];
+  } catch (err) {
+    console.error(`加载自选股失败: ${err.message}`);
+    return [];
+  }
+}
+
+function saveAlerts(alerts) {
+  ensureDataDir();
+  const data = {
+    alerts,
+    savedAt: Date.now()
+  };
+  fs.writeFileSync(ALERTS_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  return data;
+}
+
+function loadAlerts() {
+  if (!fs.existsSync(ALERTS_FILE)) {
+    return [];
+  }
+  try {
+    const data = JSON.parse(fs.readFileSync(ALERTS_FILE, 'utf-8'));
+    return data.alerts || [];
+  } catch (err) {
+    console.error(`加载止盈止损记录失败: ${err.message}`);
+    return [];
+  }
+}
+
+function saveAssetHistory(assetHistory) {
+  ensureDataDir();
+  const data = {
+    history: assetHistory,
+    savedAt: Date.now()
+  };
+  fs.writeFileSync(ASSET_HISTORY_FILE, JSON.stringify(data, null, 2), 'utf-8');
+  return data;
+}
+
+function loadAssetHistory() {
+  if (!fs.existsSync(ASSET_HISTORY_FILE)) {
+    return [];
+  }
+  try {
+    const data = JSON.parse(fs.readFileSync(ASSET_HISTORY_FILE, 'utf-8'));
+    return data.history || [];
+  } catch (err) {
+    console.error(`加载资产历史失败: ${err.message}`);
+    return [];
+  }
 }
 
 module.exports = {
@@ -149,5 +234,11 @@ module.exports = {
   saveAll,
   clearAll,
   hasSavedData,
+  saveWatchlist,
+  loadWatchlist,
+  saveAlerts,
+  loadAlerts,
+  saveAssetHistory,
+  loadAssetHistory,
   DATA_DIR
 };

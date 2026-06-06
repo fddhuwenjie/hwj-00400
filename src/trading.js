@@ -10,8 +10,11 @@ class TradingSystem {
     this.orders = [];
     this.orderIdCounter = 0;
     this.tradeHistory = [];
+    this.alerts = [];
+    this.assetHistory = [];
     this.autoSave = true;
-    
+    this.initialCash = 1000000;
+
     this.load();
   }
 
@@ -24,26 +27,40 @@ class TradingSystem {
       const savedDate = new Date(portfolioData.savedAt).toLocaleString('zh-CN');
       console.log(`${COLORS.cyan}💾 已加载持仓数据（保存于: ${savedDate}）${COLORS.reset}`);
     }
-    
+
     const historyData = storage.loadTradeHistory();
     if (historyData && historyData.length > 0) {
       this.tradeHistory = historyData;
       console.log(`${COLORS.cyan}💾 已加载 ${historyData.length} 条交易记录${COLORS.reset}`);
     }
-    
+
     const ordersData = storage.loadOrders();
     if (ordersData && ordersData.length > 0) {
       this.orders = ordersData;
       console.log(`${COLORS.cyan}💾 已加载 ${ordersData.length} 个委托单${COLORS.reset}`);
     }
+
+    const alertsData = storage.loadAlerts();
+    if (alertsData && alertsData.length > 0) {
+      this.alerts = alertsData;
+      console.log(`${COLORS.cyan}💾 已加载 ${alertsData.length} 条止盈止损记录${COLORS.reset}`);
+    }
+
+    const assetHistoryData = storage.loadAssetHistory();
+    if (assetHistoryData && assetHistoryData.length > 0) {
+      this.assetHistory = assetHistoryData;
+      console.log(`${COLORS.cyan}💾 已加载 ${assetHistoryData.length} 条资产历史${COLORS.reset}`);
+    }
   }
 
   save() {
     if (!this.autoSave) return;
-    
+
     storage.savePortfolio(this.cash, this.portfolio, this.orderIdCounter);
     storage.saveTradeHistory(this.tradeHistory);
     storage.saveOrders(this.orders);
+    storage.saveAlerts(this.alerts);
+    storage.saveAssetHistory(this.assetHistory);
   }
 
   reset() {
@@ -52,11 +69,13 @@ class TradingSystem {
     this.orders = [];
     this.orderIdCounter = 0;
     this.tradeHistory = [];
+    this.alerts = [];
+    this.assetHistory = [];
     storage.clearAll();
     console.log(`${COLORS.yellow}🔄 账户已重置，初始资金 1,000,000 元${COLORS.reset}`);
   }
 
-  buy(code, quantity, type = 'market', price = null) {
+  buy(code, quantity, type = 'market', price = null, takeProfit = null, stopLoss = null) {
     const stock = market.getStock(code);
     if (!stock) {
       return { success: false, message: `股票不存在: ${code}` };
@@ -89,7 +108,9 @@ class TradingSystem {
       price: orderPrice,
       status: type === 'market' ? 'filled' : 'pending',
       createTime: Date.now(),
-      fillTime: type === 'market' ? Date.now() : null
+      fillTime: type === 'market' ? Date.now() : null,
+      takeProfit,
+      stopLoss
     };
 
     if (type === 'market') {
@@ -183,13 +204,21 @@ class TradingSystem {
       const totalCostBasis = position.avgCost * position.quantity + totalCost;
       position.quantity = totalQuantity;
       position.avgCost = parseFloat((totalCostBasis / totalQuantity).toFixed(2));
+      if (order.takeProfit !== null && order.takeProfit !== undefined) {
+        position.takeProfit = order.takeProfit;
+      }
+      if (order.stopLoss !== null && order.stopLoss !== undefined) {
+        position.stopLoss = order.stopLoss;
+      }
     } else {
       this.portfolio.set(order.code, {
         code: order.code,
         name: order.name,
         quantity: order.quantity,
         avgCost: parseFloat((totalCost / order.quantity).toFixed(2)),
-        frozenQuantity: 0
+        frozenQuantity: 0,
+        takeProfit: order.takeProfit !== null && order.takeProfit !== undefined ? order.takeProfit : null,
+        stopLoss: order.stopLoss !== null && order.stopLoss !== undefined ? order.stopLoss : null
       });
     }
 
@@ -230,6 +259,7 @@ class TradingSystem {
       this.portfolio.delete(order.code);
     }
 
+    const triggerType = order.triggerType || null;
     this.tradeHistory.push({
       time: Date.now(),
       type: 'sell',
@@ -239,7 +269,8 @@ class TradingSystem {
       price: order.price,
       amount: netAmount,
       commission: commission + stampDuty,
-      profit: parseFloat(profit.toFixed(2))
+      profit: parseFloat(profit.toFixed(2)),
+      triggerType
     });
 
     order.status = 'filled';
@@ -249,17 +280,17 @@ class TradingSystem {
   checkOrders() {
     const pendingOrders = this.orders.filter(o => o.status === 'pending');
     let hasChanges = false;
-    
+
     pendingOrders.forEach(order => {
       const stock = market.getStock(order.code);
       if (!stock) return;
-      
+
       if (order.type === 'buy') {
         if (stock.currentPrice <= order.price) {
           const totalCost = order.price * order.quantity;
           const commission = Math.max(totalCost * 0.0003, 5);
           const totalAmount = totalCost + commission;
-          
+
           if (this.cash >= totalAmount) {
             this._executeBuy(order);
             hasChanges = true;
@@ -269,18 +300,111 @@ class TradingSystem {
           }
         }
       } else if (order.type === 'sell') {
-          if (stock.currentPrice >= order.price) {
-            this._executeSell(order);
-            hasChanges = true;
-          }
+        if (stock.currentPrice >= order.price) {
+          this._executeSell(order);
+          hasChanges = true;
         }
-      });
-    
+      }
+    });
+
     this.orders = this.orders.filter(o => o.status !== 'filled');
-    
+
     if (hasChanges) {
       this.save();
     }
+  }
+
+  checkRiskManagement() {
+    let hasChanges = false;
+    const triggeredPositions = [];
+
+    this.portfolio.forEach((position, code) => {
+      const stock = market.getStock(code);
+      if (!stock) return;
+
+      const currentPrice = stock.currentPrice;
+      let triggered = false;
+      let triggerType = null;
+      let triggerPrice = null;
+
+      if (position.takeProfit !== null && position.takeProfit !== undefined && currentPrice >= position.takeProfit) {
+        triggered = true;
+        triggerType = 'take_profit';
+        triggerPrice = position.takeProfit;
+      } else if (position.stopLoss !== null && position.stopLoss !== undefined && currentPrice <= position.stopLoss) {
+        triggered = true;
+        triggerType = 'stop_loss';
+        triggerPrice = position.stopLoss;
+      }
+
+      if (triggered && position.quantity > 0) {
+        triggeredPositions.push({
+          position,
+          code,
+          name: position.name,
+          quantity: position.quantity,
+          triggerType,
+          triggerPrice,
+          currentPrice
+        });
+      }
+    });
+
+    triggeredPositions.forEach(({ position, code, name, quantity, triggerType, triggerPrice, currentPrice }) => {
+      const alert = {
+        time: Date.now(),
+        type: triggerType,
+        code,
+        name,
+        quantity,
+        triggerPrice,
+        currentPrice,
+        profit: triggerType === 'take_profit'
+          ? (currentPrice - position.avgCost) * quantity
+          : (currentPrice - position.avgCost) * quantity
+      };
+      this.alerts.unshift(alert);
+
+      const triggerTypeName = triggerType === 'take_profit' ? '止盈触发' : '止损触发';
+      const triggerColor = triggerType === 'take_profit' ? COLORS.green : COLORS.red;
+      console.log(`\n${triggerColor}🔔 ${triggerTypeName}: ${name} (${code}) 现价 ${currentPrice.toFixed(2)}，${triggerType === 'take_profit' ? '≥' : '≤'} ${triggerPrice.toFixed(2)}，自动卖出 ${quantity}股${COLORS.reset}`);
+
+      const sellOrder = {
+        id: ++this.orderIdCounter,
+        type: 'sell',
+        code,
+        name,
+        quantity,
+        orderType: 'market',
+        price: currentPrice,
+        status: 'filled',
+        createTime: Date.now(),
+        fillTime: Date.now(),
+        triggerType
+      };
+      this._executeSell(sellOrder);
+      hasChanges = true;
+    });
+
+    if (hasChanges) {
+      this.save();
+    }
+  }
+
+  recordAssetSnapshot() {
+    const pf = this.getPortfolio();
+    this.assetHistory.push({
+      time: Date.now(),
+      cash: pf.cash,
+      totalValue: pf.totalValue,
+      totalAssets: pf.totalAssets
+    });
+
+    if (this.assetHistory.length > 10000) {
+      this.assetHistory = this.assetHistory.slice(-10000);
+    }
+
+    this.save();
   }
 
   getPortfolio() {
@@ -330,14 +454,22 @@ class TradingSystem {
     return [...this.tradeHistory];
   }
 
+  getAlerts() {
+    return [...this.alerts];
+  }
+
+  getAssetHistory() {
+    return [...this.assetHistory];
+  }
+
   renderPortfolio() {
     const pf = this.getPortfolio();
 
     console.log();
     console.log(`${COLORS.bold}💼 持仓列表${COLORS.reset}`);
-    console.log('='.repeat(100));
-    console.log(`${COLORS.cyan}${'代码'.padEnd(10)}${'名称'.padEnd(12)}${'持仓'.padEnd(10)}${'成本价'.padEnd(12)}${'现价'.padEnd(12)}${'市值'.padEnd(14)}${'盈亏'.padEnd(16)}${'盈亏比例'}`);
-    console.log('-'.repeat(100));
+    console.log('='.repeat(130));
+    console.log(`${COLORS.cyan}${'代码'.padEnd(10)}${'名称'.padEnd(12)}${'持仓'.padEnd(10)}${'成本价'.padEnd(12)}${'现价'.padEnd(12)}${'市值'.padEnd(14)}${'盈亏'.padEnd(16)}${'盈亏比例'.padEnd(12)}${'止盈'.padEnd(12)}${'止损'}`);
+    console.log('-'.repeat(130));
 
     if (pf.positions.length === 0) {
       console.log(`${COLORS.yellow}暂无持仓${COLORS.reset}`);
@@ -345,19 +477,21 @@ class TradingSystem {
       pf.positions.forEach(pos => {
         const priceStr = colorPrice(pos.currentPrice, pos.avgCost);
         const profitStr = colorChange(pos.profit, pos.profitPercent);
-        
+        const tpStr = pos.takeProfit ? `${COLORS.green}${pos.takeProfit.toFixed(2)}${COLORS.reset}` : '--';
+        const slStr = pos.stopLoss ? `${COLORS.red}${pos.stopLoss.toFixed(2)}${COLORS.reset}` : '--';
+
         console.log(
-          `${pos.code.padEnd(10)}${pos.name.padEnd(12)}${pos.quantity.toString().padEnd(10)}${pos.avgCost.toFixed(2).padEnd(12)}${priceStr.padEnd(12)}${pos.currentValue.toFixed(2).padEnd(14)}${profitStr}`
+          `${pos.code.padEnd(10)}${pos.name.padEnd(12)}${pos.quantity.toString().padEnd(10)}${pos.avgCost.toFixed(2).padEnd(12)}${priceStr.padEnd(12)}${pos.currentValue.toFixed(2).padEnd(14)}${profitStr.padEnd(22)}${tpStr.padEnd(12)}${slStr}`
         );
       });
     }
 
-    console.log('='.repeat(100));
+    console.log('='.repeat(130));
     console.log(`可用资金: ${COLORS.green}${pf.cash.toFixed(2)}${COLORS.reset}`);
     console.log(`持仓市值: ${pf.totalValue.toFixed(2)}`);
     console.log(`持仓盈亏: ${colorChange(pf.totalProfit, pf.totalProfitPercent)}`);
     console.log(`总资产: ${COLORS.bold}${pf.totalAssets.toFixed(2)}${COLORS.reset}`);
-    
+
     if (storage.hasSavedData()) {
       console.log(`${COLORS.cyan}💾 数据已自动保存到 data/ 目录${COLORS.reset}`);
     }
@@ -379,6 +513,37 @@ class TradingSystem {
       console.log('='.repeat(80));
     }
   }
+
+  renderAlerts() {
+    console.log();
+    console.log(`${COLORS.bold}🔔 止盈止损记录${COLORS.reset}`);
+    console.log('='.repeat(110));
+    console.log(`${COLORS.cyan}${'触发时间'.padEnd(22)}${'类型'.padEnd(12)}${'代码'.padEnd(10)}${'名称'.padEnd(12)}${'数量'.padEnd(10)}${'触发价'.padEnd(12)}${'成交价'.padEnd(12)}${'盈亏'}`);
+    console.log('-'.repeat(110));
+
+    if (this.alerts.length === 0) {
+      console.log(`${COLORS.yellow}暂无止盈止损记录${COLORS.reset}`);
+    } else {
+      const displayAlerts = this.alerts.slice(0, 50);
+      displayAlerts.forEach(alert => {
+        const time = new Date(alert.time).toLocaleString('zh-CN');
+        const typeStr = alert.type === 'take_profit'
+          ? `${COLORS.green}止盈触发${COLORS.reset}`
+          : `${COLORS.red}止损触发${COLORS.reset}`;
+        const profitStr = colorChange(alert.profit, 0);
+
+        console.log(
+          `${time.padEnd(22)}${typeStr.padEnd(12)}${alert.code.padEnd(10)}${alert.name.padEnd(12)}${alert.quantity.toString().padEnd(10)}${alert.triggerPrice.toFixed(2).padEnd(12)}${alert.currentPrice.toFixed(2).padEnd(12)}${profitStr}`
+        );
+      });
+      if (this.alerts.length > 50) {
+        console.log(`${COLORS.yellow}... 共 ${this.alerts.length} 条记录，显示前50条${COLORS.reset}`);
+      }
+    }
+
+    console.log('='.repeat(110));
+    console.log();
+  }
 }
 
 const trading = new TradingSystem();
@@ -386,6 +551,8 @@ const trading = new TradingSystem();
 setInterval(() => {
   if (market.isRunning) {
     trading.checkOrders();
+    trading.checkRiskManagement();
+    trading.recordAssetSnapshot();
   }
 }, 1000);
 

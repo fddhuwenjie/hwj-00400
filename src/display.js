@@ -1,4 +1,5 @@
 const market = require('./market');
+const watchlist = require('./watchlist');
 const klineGenerator = require('./kline');
 const chart = require('./chart');
 const indicators = require('./indicators');
@@ -169,6 +170,69 @@ function renderTop(type = 'gain', count = 5) {
   console.log('='.repeat(80));
 }
 
+function renderWatchListFavorites() {
+  const favorites = watchlist.list();
+  const elapsed = market.getElapsedSeconds();
+  
+  console.clear();
+  console.log(`${COLORS.bold}⭐ 自选股监控 - 运行时间: ${Math.floor(elapsed / 60)}分${elapsed % 60}秒${COLORS.reset}`);
+  console.log('='.repeat(80));
+  console.log(`${COLORS.cyan}${'代码'.padEnd(10)}${'名称'.padEnd(12)}${'现价'.padEnd(12)}${'涨跌'.padEnd(22)}${'开盘'.padEnd(10)}${'最高'.padEnd(10)}${'最低'.padEnd(10)}`);
+  console.log('-'.repeat(80));
+  
+  if (favorites.length === 0) {
+    console.log(`${COLORS.yellow}自选股列表为空，使用 watchlist add <code> 添加${COLORS.reset}`);
+  } else {
+    favorites.forEach(code => {
+      const stock = market.getStock(code);
+      if (!stock) return;
+      
+      const priceStr = colorPrice(stock.currentPrice, stock.prevClose);
+      const changeStr = colorChange(stock.change, stock.changePercent);
+      const openStr = stock.openPrice.toFixed(2).padEnd(10);
+      const highStr = colorPrice(stock.high, stock.prevClose);
+      const lowStr = colorPrice(stock.low, stock.prevClose);
+      
+      console.log(
+        `${stock.code.padEnd(10)}${stock.name.padEnd(12)}${priceStr.padEnd(12)}${changeStr.padEnd(22)}${openStr}${highStr.padEnd(10)}${lowStr.padEnd(10)}`
+      );
+    });
+  }
+  
+  console.log('='.repeat(80));
+  console.log(`${COLORS.yellow}提示: 按 Ctrl+C 退出 | 共 ${favorites.length} 只自选股${COLORS.reset}`);
+}
+
+function renderWatchlistStatic() {
+  const quotes = watchlist.getWatchlistQuotes();
+  
+  console.log();
+  console.log(`${COLORS.bold}⭐ 自选股实时行情${COLORS.reset}`);
+  console.log('='.repeat(80));
+  console.log(`${COLORS.cyan}${'代码'.padEnd(10)}${'名称'.padEnd(12)}${'现价'.padEnd(12)}${'涨跌'.padEnd(22)}${'开盘'.padEnd(10)}${'最高'.padEnd(10)}${'最低'.padEnd(10)}`);
+  console.log('-'.repeat(80));
+
+  if (quotes.length === 0) {
+    console.log(`${COLORS.yellow}自选股列表为空，使用 watchlist add <code> 添加${COLORS.reset}`);
+  } else {
+    quotes.forEach(stock => {
+      const priceStr = colorPrice(stock.currentPrice, stock.prevClose);
+      const changeStr = colorChange(stock.change, stock.changePercent);
+      const openStr = stock.openPrice.toFixed(2).padEnd(10);
+      const highStr = colorPrice(stock.high, stock.prevClose);
+      const lowStr = colorPrice(stock.low, stock.prevClose);
+      
+      console.log(
+        `${stock.code.padEnd(10)}${stock.name.padEnd(12)}${priceStr.padEnd(12)}${changeStr.padEnd(22)}${openStr}${highStr.padEnd(10)}${lowStr.padEnd(10)}`
+      );
+    });
+  }
+
+  console.log('='.repeat(80));
+  console.log(`共 ${quotes.length} 只自选股`);
+  console.log();
+}
+
 function renderWatch(options = {}) {
   if (options.top) {
     renderTop(options.top, options.count || 5);
@@ -176,7 +240,10 @@ function renderWatch(options = {}) {
   if (options.quote) {
     renderQuote(options.quote);
   }
-  if (!options.top && !options.quote) {
+  if (options.favorites) {
+    renderWatchListFavorites();
+  }
+  if (!options.top && !options.quote && !options.favorites) {
     renderWatchList();
   }
 }
@@ -186,6 +253,8 @@ module.exports = {
   renderQuote,
   renderTop,
   renderWatchList,
+  renderWatchListFavorites,
+  renderWatchlistStatic,
   colorPrice,
   colorChange,
   formatVolume,

@@ -1,14 +1,25 @@
 {
-  "cash": 961559.4834,
+  "cash": 820891.9471,
   "positions": [
     {
-      "code": "000858",
-      "name": "五粮液",
-      "quantity": 200,
-      "avgCost": 161.5,
-      "frozenQuantity": 0
+      "code": "600519",
+      "name": "贵州茅台",
+      "quantity": 100,
+      "avgCost": 1668.43,
+      "frozenQuantity": 0,
+      "takeProfit": 2000,
+      "stopLoss": 1500
+    },
+    {
+      "code": "000001",
+      "name": "平安银行",
+      "quantity": 1000,
+      "avgCost": 12.21,
+      "frozenQuantity": 0,
+      "takeProfit": 15,
+      "stopLoss": 10
     }
   ],
-  "orderIdCounter": 3,
-  "savedAt": 1780759477628
+  "orderIdCounter": 2,
+  "savedAt": 1780760422651
 }
