@@ -1,5 +1,6 @@
 const EventEmitter = require('events');
 const { getStockList } = require('./stocks');
+const newsManager = require('./news');
 
 class MarketSimulator extends EventEmitter {
   constructor() {
@@ -9,7 +10,51 @@ class MarketSimulator extends EventEmitter {
     this.isRunning = false;
     this.intervalId = null;
     this.startTime = null;
+    this.newsImpacts = new Map();
     this._initStocks();
+    this._setupNewsListener();
+  }
+
+  _setupNewsListener() {
+    newsManager.onNews((news) => {
+      if (news.type !== 'neutral' && news.target && news.target.targets) {
+        news.target.targets.forEach(code => {
+          const existing = this.newsImpacts.get(code) || [];
+          existing.push({
+            impact: news.impact,
+            startTime: Date.now(),
+            duration: 60 * 1000,
+            newsId: news.id
+          });
+          this.newsImpacts.set(code, existing);
+        });
+      }
+    });
+  }
+
+  _applyNewsImpact(code, currentPrice) {
+    const impacts = this.newsImpacts.get(code) || [];
+    const now = Date.now();
+    let totalImpact = 0;
+    const activeImpacts = [];
+
+    impacts.forEach(impact => {
+      const elapsed = now - impact.startTime;
+      if (elapsed < impact.duration) {
+        const decay = 1 - (elapsed / impact.duration);
+        totalImpact += impact.impact * decay;
+        activeImpacts.push(impact);
+      }
+    });
+
+    this.newsImpacts.set(code, activeImpacts);
+
+    if (totalImpact !== 0) {
+      const newPrice = currentPrice * (1 + totalImpact);
+      return parseFloat(newPrice.toFixed(2));
+    }
+
+    return currentPrice;
   }
 
   _initStocks() {
@@ -53,7 +98,8 @@ class MarketSimulator extends EventEmitter {
     const stock = this.stocks.get(code);
     if (!stock) return;
     
-    const newPrice = this._randomWalk(stock.currentPrice);
+    let newPrice = this._randomWalk(stock.currentPrice);
+    newPrice = this._applyNewsImpact(code, newPrice);
     const volumeChange = Math.floor(Math.random() * 10000) + 100;
     
     stock.currentPrice = newPrice;
@@ -88,6 +134,7 @@ class MarketSimulator extends EventEmitter {
     this.startTime = Date.now();
     this.intervalId = setInterval(() => this._tick(), 1000);
     console.log('📈 行情模拟已启动，价格每秒更新...');
+    newsManager.start();
   }
 
   stop() {
@@ -98,6 +145,24 @@ class MarketSimulator extends EventEmitter {
       this.intervalId = null;
     }
     console.log('📉 行情模拟已停止');
+    newsManager.stop();
+  }
+
+  getActiveNewsImpacts() {
+    const result = [];
+    const now = Date.now();
+    this.newsImpacts.forEach((impacts, code) => {
+      impacts.forEach(impact => {
+        if (now - impact.startTime < impact.duration) {
+          result.push({
+            code,
+            impact: impact.impact,
+            remaining: impact.duration - (now - impact.startTime)
+          });
+        }
+      });
+    });
+    return result;
   }
 
   getStock(code) {

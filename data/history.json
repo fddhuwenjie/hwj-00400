@@ -21,7 +21,29 @@
       "amount": 12215,
       "commission": 5,
       "profit": 0
+    },
+    {
+      "time": 1780761092685,
+      "type": "buy",
+      "code": "600036",
+      "name": "招商银行",
+      "quantity": 100,
+      "price": 35.96,
+      "amount": 3601,
+      "commission": 5,
+      "profit": 0
+    },
+    {
+      "time": 1780761101335,
+      "type": "buy",
+      "code": "600036",
+      "name": "招商银行",
+      "quantity": 100,
+      "price": 34.36,
+      "amount": 3441,
+      "commission": 5,
+      "profit": 0
     }
   ],
-  "savedAt": 1780760422652
+  "savedAt": 1780761977473
 }

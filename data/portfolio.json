@@ -1,5 +1,5 @@
 {
-  "cash": 820891.9471,
+  "cash": 813849.9471,
   "positions": [
     {
       "code": "600519",
@@ -18,8 +18,17 @@
       "frozenQuantity": 0,
       "takeProfit": 15,
       "stopLoss": 10
+    },
+    {
+      "code": "600036",
+      "name": "招商银行",
+      "quantity": 200,
+      "avgCost": 35.16,
+      "frozenQuantity": 0,
+      "takeProfit": 45,
+      "stopLoss": 35
     }
   ],
-  "orderIdCounter": 2,
-  "savedAt": 1780760422651
+  "orderIdCounter": 4,
+  "savedAt": 1780761977472
 }
